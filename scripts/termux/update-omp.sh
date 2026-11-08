@@ -1,5 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# Install/update OMP for Termux using the latest successful Android ARM64 build.
+# Install/update OMP for Termux using the latest public Android ARM64 release asset.
 #
 #   curl -fsSL https://raw.githubusercontent.com/Agus27712/oh-my-pi-android/android/termux/scripts/termux/update-omp.sh | bash
 #   curl -fsSL <script-url> | OMP_FORCE=1 bash
@@ -8,11 +8,9 @@
 set -euo pipefail
 
 REPO="${OMP_FORK:-Agus27712/oh-my-pi-android}"
-BRANCH="${OMP_BRANCH:-android/termux}"
 PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 GLOBAL="$PREFIX/install/global/node_modules"
 NATIVES="$GLOBAL/@oh-my-pi/pi-natives/native"
-WORKFLOW="android-arm64-build.yml"
 
 for cmd in bun curl unzip; do
   command -v "$cmd" >/dev/null 2>&1 || {
@@ -21,34 +19,45 @@ for cmd in bun curl unzip; do
   }
 done
 
-echo "== 1/5 find latest successful Android build =="
-RUN_JSON="$(curl -fsSL --retry 3 --connect-timeout 15 \
-  "https://api.github.com/repos/$REPO/actions/workflows/$WORKFLOW/runs?branch=$BRANCH&status=success&per_page=1")"
-RUN_ID="$(printf '%s' "$RUN_JSON" | bun -e 'const j=JSON.parse(await Bun.stdin.text()); console.log(j.workflow_runs?.[0]?.id ?? "")')"
-[ -n "$RUN_ID" ] || {
-  echo "!! no successful Android build found for $BRANCH"
-  echo "Check: https://github.com/$REPO/actions/workflows/$WORKFLOW"
+ARCH="$(bun -e 'console.log(process.arch)')"
+[ "$ARCH" = "arm64" ] || {
+  echo "!! Unsupported architecture: $ARCH (expected arm64)"
+  exit 1
+}
+
+echo "== 1/5 find latest public Android ARM64 release =="
+RELEASES="$(curl -fsSL --retry 3 --connect-timeout 15 \
+  "https://api.github.com/repos/$REPO/releases?per_page=30")"
+ASSET_URL="$(printf '%s' "$RELEASES" | bun -e '
+  const releases = JSON.parse(await Bun.stdin.text());
+  const release = releases.find(r => r.tag_name?.startsWith("android-arm64-") &&
+    r.assets?.some(a => a.name === "pi_natives.android-arm64.node") &&
+    r.assets?.some(a => a.name === "version.txt"));
+  const asset = release?.assets?.find(a => a.name === "pi_natives.android-arm64.node");
+  console.log(asset?.browser_download_url ?? "");
+')"
+VERSION_URL="$(printf '%s' "$RELEASES" | bun -e '
+  const releases = JSON.parse(await Bun.stdin.text());
+  const release = releases.find(r => r.tag_name?.startsWith("android-arm64-") &&
+    r.assets?.some(a => a.name === "version.txt"));
+  console.log(release?.assets?.find(a => a.name === "version.txt")?.browser_download_url ?? "");
+')"
+[ -n "$ASSET_URL" ] && [ -n "$VERSION_URL" ] || {
+  echo "!! no public Android ARM64 release found."
+  echo "Wait for the Android ARM64 workflow to finish successfully."
   exit 2
 }
-echo "workflow run: $RUN_ID"
-
-ART_JSON="$(curl -fsSL --retry 3 --connect-timeout 15 \
-  "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID/artifacts")"
-ART_ID="$(printf '%s' "$ART_JSON" | bun -e 'const j=JSON.parse(await Bun.stdin.text()); const a=j.artifacts?.find(x=>x.name==="omp-android-arm64-addon" && !x.expired); console.log(a?.id ?? "")')"
-[ -n "$ART_ID" ] || { echo "!! Android addon artifact missing or expired"; exit 2; }
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-echo "== 2/5 download native addon =="
-curl -fL --retry 3 --connect-timeout 15 \
-  "https://api.github.com/repos/$REPO/actions/artifacts/$ART_ID/zip" \
-  -o "$TMP/android-addon.zip"
-unzip -q "$TMP/android-addon.zip" -d "$TMP/addon"
-ADDON="$TMP/addon/pi_natives.android-arm64.node"
-VERSION="$(cat "$TMP/addon/version.txt")"
-[ -s "$ADDON" ] || { echo "!! addon file missing in artifact"; exit 1; }
-[ -n "$VERSION" ] || { echo "!! package version missing in artifact"; exit 1; }
+echo "== 2/5 download native addon (public release asset) =="
+curl -fL --retry 3 --connect-timeout 15 "$ASSET_URL" -o "$TMP/pi_natives.android-arm64.node"
+curl -fL --retry 3 --connect-timeout 15 "$VERSION_URL" -o "$TMP/version.txt"
+ADDON="$TMP/pi_natives.android-arm64.node"
+VERSION="$(tr -d '\r\n' < "$TMP/version.txt")"
+[ -s "$ADDON" ] || { echo "!! addon download is empty"; exit 1; }
+[ -n "$VERSION" ] || { echo "!! package version missing"; exit 1; }
 echo "OMP version: $VERSION"
 
 echo "== 3/5 install OMP CLI@$VERSION =="
@@ -71,7 +80,6 @@ echo "== 5/5 verify installation =="
 "$PREFIX/bin/omp" --version
 bun -e 'const a=require(process.argv[1]); if(typeof a.countTokens!=="function") process.exit(1); console.log("native addon loaded; exports:",Object.keys(a).length)' \
   "$NATIVES/pi_natives.android-arm64.node"
-
 
 echo "OK: OMP $VERSION installed for Termux ARM64."
 echo "Run: omp"
