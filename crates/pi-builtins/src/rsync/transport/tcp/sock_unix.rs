@@ -137,7 +137,7 @@ pub(super) fn numeric_host(addr: &Addr) -> String {
 	let rc = unsafe {
 		libc::getnameinfo(
 			addr.as_ptr(),
-			addr.len,
+			addr.len as _,
 			buf.as_mut_ptr(),
 			buf.len() as libc::socklen_t,
 			std::ptr::null_mut(),
