@@ -1,0 +1,95 @@
+name: Android ARM64 native build
+
+on:
+  push:
+    branches:
+      - android/termux
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/**"
+      - "packages/natives/package.json"
+      - "scripts/stamp-native-version.ts"
+      - ".github/workflows/android-arm64-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-arm64-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-addon:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      ANDROID_NDK_VERSION: 27.2.12479018
+      ANDROID_API_LEVEL: 24
+      CARGO_BUILD_JOBS: 2
+      RUSTC_BOOTSTRAP: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust nightly and Android target
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: aarch64-linux-android
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - name: Install Android NDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install pinned NDK
+        run: sdkmanager "ndk;${ANDROID_NDK_VERSION}"
+
+      - name: Configure Android linker
+        shell: bash
+        run: |
+          NDK="$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION"
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          echo "ANDROID_NDK_HOME=$NDK" >> "$GITHUB_ENV"
+          echo "CC_aarch64_linux_android=$TOOLCHAIN/aarch64-linux-android${ANDROID_API_LEVEL}-clang" >> "$GITHUB_ENV"
+          echo "AR_aarch64_linux_android=$TOOLCHAIN/llvm-ar" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$TOOLCHAIN/aarch64-linux-android${ANDROID_API_LEVEL}-clang" >> "$GITHUB_ENV"
+          echo "RUSTFLAGS=-C target-cpu=generic" >> "$GITHUB_ENV"
+          echo "$TOOLCHAIN" >> "$GITHUB_PATH"
+
+      - name: Record toolchain
+        run: |
+          rustc --version --verbose
+          cargo --version
+          bun --version
+          aarch64-linux-android${ANDROID_API_LEVEL}-clang --version
+          rustup target list --installed
+
+      - name: Build N-API addon for Android ARM64
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release -p pi-natives --target aarch64-linux-android
+          ADDON="target/aarch64-linux-android/release/libpi_natives.so"
+          test -s "$ADDON"
+          bun scripts/stamp-native-version.ts "$ADDON"
+          mkdir -p dist/android-arm64
+          cp "$ADDON" dist/android-arm64/pi_natives.android-arm64.node
+          llvm-strip --strip-unneeded dist/android-arm64/pi_natives.android-arm64.node
+          bun -e 'const p=await Bun.file("packages/natives/package.json").json(); await Bun.write("dist/android-arm64/version.txt", p.version)'
+          file dist/android-arm64/pi_natives.android-arm64.node
+          readelf -h dist/android-arm64/pi_natives.android-arm64.node | grep -E 'Class:|Machine:'
+
+      - name: Upload Android ARM64 addon
+        uses: actions/upload-artifact@v4
+        with:
+          name: omp-android-arm64-addon
+          path: dist/android-arm64/
+          if-no-files-found: error
+          retention-days: 30
