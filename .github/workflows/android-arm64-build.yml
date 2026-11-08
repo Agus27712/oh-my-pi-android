@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: android-arm64-build-${{ github.ref }}
@@ -100,3 +100,16 @@ jobs:
           path: dist/android-arm64/
           if-no-files-found: error
           retention-days: 30
+
+      # Actions artifacts require authentication to download through the REST API.
+      # Publish the same files as a public prerelease asset for Termux clients.
+      - name: Publish public Android ARM64 release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-arm64-${{ github.run_number }}-${{ github.run_attempt }}
+          name: Android ARM64 build ${{ github.run_number }}
+          prerelease: true
+          make_latest: false
+          files: |
+            dist/android-arm64/pi_natives.android-arm64.node
+            dist/android-arm64/version.txt
