@@ -510,8 +510,14 @@ fn may_access(path: &Path, mode: libc::c_int) -> bool {
 	let Ok(path) = std::ffi::CString::new(path.as_os_str().as_bytes()) else {
 		return false;
 	};
+	// Android's Bionic does not support AT_EACCESS; Android does not run
+	// setuid programs, so real and effective IDs are equivalent here.
 	// SAFETY: `path` is a NUL-terminated string alive for the call.
-	unsafe { libc::faccessat(libc::AT_FDCWD, path.as_ptr(), mode, libc::AT_EACCESS) == 0 }
+	#[cfg(target_os = "android")]
+	let flags = 0;
+	#[cfg(not(target_os = "android"))]
+	let flags = libc::AT_EACCESS;
+	unsafe { libc::faccessat(libc::AT_FDCWD, path.as_ptr(), mode, flags) == 0 }
 }
 
 /// Reads a whole host file. Under a cancellable scope the read goes through
