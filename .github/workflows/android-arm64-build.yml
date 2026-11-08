@@ -33,10 +33,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust nightly and Android target
+      - name: Install Rust nightly toolchain
         uses: dtolnay/rust-toolchain@nightly
-        with:
-          targets: aarch64-linux-android
+
+      # The repository's rust-toolchain.toml pins the active toolchain.
+      # Install the Android std component into that exact active toolchain,
+      # not only into the rolling "nightly" toolchain installed by the action.
+      - name: Install Android Rust target for active toolchain
+        run: |
+          rustc --version --verbose
+          rustup target add aarch64-linux-android
+          rustup target list --installed | grep -Fx aarch64-linux-android
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
