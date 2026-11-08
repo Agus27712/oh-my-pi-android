@@ -169,7 +169,7 @@ fn parse_stat(pid: i32, line: &[u8]) -> Option<ProcInfo> {
 	})
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 mod sys {
 	use std::{
 		fs,
