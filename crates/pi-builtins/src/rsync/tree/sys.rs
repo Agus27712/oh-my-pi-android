@@ -271,7 +271,7 @@ pub(crate) fn mknodat(
 pub(crate) fn mkfifoat(dir: Option<BorrowedFd<'_>>, name: &CStr, mode: u32) -> io::Result<()> {
 	check(retry(|| {
 		// SAFETY: valid C string and dirfd.
-		unsafe { libc::mkfifoat(dirfd(dir), name.as_ptr(), mode as libc::mode_t) }
+		unsafe { libc::mknodat(dirfd(dir), name.as_ptr(), (mode | libc::S_IFIFO) as libc::mode_t, 0) }
 	}))
 }
 
