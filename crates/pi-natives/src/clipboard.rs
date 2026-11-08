@@ -7,6 +7,7 @@
 
 use std::io::Cursor;
 
+#[cfg(not(target_os = "android"))]
 use arboard::{Clipboard, Error as ClipboardError, ImageData};
 use image::{DynamicImage, ImageFormat, RgbaImage};
 use napi::{JsString, bindgen_prelude::*};
@@ -31,6 +32,7 @@ pub struct ClipboardImage {
 	pub mime_type: String,
 }
 
+#[cfg(not(target_os = "android"))]
 fn encode_png(image: ImageData<'_>) -> Result<Vec<u8>> {
 	let width = u32::try_from(image.width)
 		.map_err(|_| Error::from_reason("Clipboard image width overflow"))?;
@@ -192,13 +194,37 @@ fn set_clipboard_text(text: &str) -> Result<()> {
 /// exits, so a transient `Clipboard` is sufficient. Keeping the write on the
 /// calling thread also avoids worker-thread `AppKit` pasteboard warnings on
 /// macOS.
-#[cfg(not(target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn set_clipboard_text(text: &str) -> Result<()> {
 	let mut clipboard = Clipboard::new()
 		.map_err(|err| Error::from_reason(format!("Failed to access clipboard: {err}")))?;
 	clipboard
 		.set_text(text)
 		.map_err(|err| Error::from_reason(format!("Failed to copy to clipboard: {err}")))?;
+	Ok(())
+}
+
+/// Android / Termux: use the companion Termux:API command-line bridge.
+#[cfg(target_os = "android")]
+fn set_clipboard_text(text: &str) -> Result<()> {
+	use std::process::{Command, Stdio};
+	use std::io::Write;
+
+	let mut child = Command::new("termux-clipboard-set")
+		.stdin(Stdio::piped())
+		.stdout(Stdio::null())
+		.stderr(Stdio::piped())
+		.spawn()
+		.map_err(|err| Error::from_reason(format!("Failed to start termux-clipboard-set: {err}. Install Termux:API.")))?;
+	child.stdin.take()
+		.ok_or_else(|| Error::from_reason("Failed to open Termux clipboard stdin"))?
+		.write_all(text.as_bytes())
+		.map_err(|err| Error::from_reason(format!("Failed to write clipboard text: {err}")))?;
+	let output = child.wait_with_output()
+		.map_err(|err| Error::from_reason(format!("Failed to wait for Termux clipboard: {err}")))?;
+	if !output.status.success() {
+		return Err(Error::from_reason(format!("termux-clipboard-set failed: {}", String::from_utf8_lossy(&output.stderr).trim())));
+	}
 	Ok(())
 }
 
@@ -213,12 +239,25 @@ fn set_clipboard_text(text: &str) -> Result<()> {
 pub fn read_text_from_clipboard() -> task::Promise<Option<String>> {
 	task::blocking("clipboard.read_text", (), move |_| -> Result<Option<String>> {
 		let _access = CLIPBOARD_ACCESS.lock();
-		let mut clipboard = Clipboard::new()
-			.map_err(|err| Error::from_reason(format!("Failed to access clipboard: {err}")))?;
-		match clipboard.get_text() {
-			Ok(text) => Ok(Some(text)),
-			Err(ClipboardError::ContentNotAvailable) => Ok(None),
-			Err(err) => Err(Error::from_reason(format!("Failed to read clipboard text: {err}"))),
+		#[cfg(target_os = "android")]
+		{
+			let output = std::process::Command::new("termux-clipboard-get")
+				.output()
+				.map_err(|err| Error::from_reason(format!("Failed to start termux-clipboard-get: {err}. Install Termux:API.")))?;
+			if !output.status.success() {
+				return Err(Error::from_reason(format!("termux-clipboard-get failed: {}", String::from_utf8_lossy(&output.stderr).trim())));
+			}
+			return Ok(Some(String::from_utf8_lossy(&output.stdout).into_owned()));
+		}
+		#[cfg(not(target_os = "android"))]
+		{
+			let mut clipboard = Clipboard::new()
+				.map_err(|err| Error::from_reason(format!("Failed to access clipboard: {err}")))?;
+			match clipboard.get_text() {
+				Ok(text) => Ok(Some(text)),
+				Err(ClipboardError::ContentNotAvailable) => Ok(None),
+				Err(err) => Err(Error::from_reason(format!("Failed to read clipboard text: {err}"))),
+			}
 		}
 	})
 }
@@ -227,6 +266,7 @@ pub fn read_text_from_clipboard() -> task::Promise<Option<String>> {
 /// decoding run after [`CLIPBOARD_ACCESS`] is released: they only touch owned
 /// buffers, and holding the lock through them would stall a synchronous copy
 /// on the JS thread for the length of a large encode.
+#[cfg(not(target_os = "android"))]
 enum ImageRead {
 	Image(ImageData<'static>),
 	/// arboard found no image, but a bitmap format is advertised; carries the
@@ -238,6 +278,7 @@ enum ImageRead {
 	Failed(ClipboardError, Option<Vec<u8>>),
 }
 
+#[cfg(not(target_os = "android"))]
 fn png_image(bytes: Vec<u8>) -> ClipboardImage {
 	ClipboardImage { data: Uint8Array::from(bytes), mime_type: "image/png".to_string() }
 }
@@ -251,6 +292,12 @@ fn png_image(bytes: Vec<u8>) -> ClipboardImage {
 #[napi]
 pub fn read_image_from_clipboard() -> task::Promise<Option<ClipboardImage>> {
 	task::blocking("clipboard.read_image", (), move |_| -> Result<Option<ClipboardImage>> {
+		#[cfg(target_os = "android")]
+		{
+			Ok(None)
+		}
+		#[cfg(not(target_os = "android"))]
+		{
 		let read = {
 			let _access = CLIPBOARD_ACCESS.lock();
 			let mut clipboard = Clipboard::new()
@@ -293,6 +340,7 @@ pub fn read_image_from_clipboard() -> task::Promise<Option<ClipboardImage>> {
 				Some(bytes) => Ok(Some(png_image(bytes))),
 				None => Err(Error::from_reason(format!("Failed to read clipboard image: {err}"))),
 			},
+		}
 		}
 	})
 }
