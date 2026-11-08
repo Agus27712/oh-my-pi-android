@@ -2,7 +2,7 @@
 # Install/update OMP for Termux using the latest successful Android ARM64 build.
 #
 #   curl -fsSL https://raw.githubusercontent.com/Agus27712/oh-my-pi-android/android/termux/scripts/termux/update-omp.sh | bash
-#   OMP_FORCE=1 curl ... | bash
+#   curl -fsSL <script-url> | OMP_FORCE=1 bash
 #
 # Requires: bun, curl, unzip. Install with: pkg install bun curl unzip
 set -euo pipefail
@@ -72,8 +72,6 @@ echo "== 5/5 verify installation =="
 bun -e 'const a=require(process.argv[1]); if(typeof a.countTokens!=="function") process.exit(1); console.log("native addon loaded; exports:",Object.keys(a).length)' \
   "$NATIVES/pi_natives.android-arm64.node"
 
-OLD="$PREFIX/lib/node_modules/@oh-my-pi/pi-coding-agent"
-if [ -d "$OLD" ]; then rm -rf "$OLD"; fi
 
 echo "OK: OMP $VERSION installed for Termux ARM64."
 echo "Run: omp"
