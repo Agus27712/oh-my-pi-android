@@ -21,6 +21,9 @@ pub enum AxHandle {
 	Uia(uiautomation::UIElement, Option<Box<[i32]>>),
 	#[cfg(target_os = "linux")]
 	AtSpi(atspi::ObjectRefOwned),
+	/// Android currently has no desktop accessibility backend.
+	#[cfg(target_os = "android")]
+	AndroidUnsupported,
 	#[cfg(test)]
 	Test(u64),
 	/// A test element without an identity, like a UIA element whose
@@ -45,6 +48,8 @@ impl AxHandle {
 			Self::Test(_) => true,
 			#[cfg(test)]
 			Self::TestUnidentified(_) => false,
+			#[cfg(target_os = "android")]
+			Self::AndroidUnsupported => false,
 		}
 	}
 }
@@ -65,7 +70,6 @@ impl PartialEq for AxHandle {
 			(Self::Test(a), Self::Test(b)) => a == b,
 			#[cfg(test)]
 			(Self::TestUnidentified(_), Self::TestUnidentified(_)) => true,
-			#[cfg(test)]
 			_ => false,
 		}
 	}
@@ -86,6 +90,8 @@ impl Hash for AxHandle {
 			Self::Test(id) => id.hash(state),
 			#[cfg(test)]
 			Self::TestUnidentified(_) => {},
+			#[cfg(target_os = "android")]
+			Self::AndroidUnsupported => {},
 		}
 	}
 }
