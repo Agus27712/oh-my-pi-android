@@ -546,6 +546,8 @@ impl ControlLease {
 			_escape: Some(escape),
 			#[cfg(target_os = "linux")]
 			_escape: escape,
+			#[cfg(target_os = "android")]
+			_escape: None,
 			_kernel: kernel,
 			running: AtomicBool::new(false),
 		})
