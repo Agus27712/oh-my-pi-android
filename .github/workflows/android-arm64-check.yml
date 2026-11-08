@@ -38,6 +38,8 @@ jobs:
 
       - name: Install Android NDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Install pinned NDK
         run: sdkmanager "ndk;${ANDROID_NDK_VERSION}"
