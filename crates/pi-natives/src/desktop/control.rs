@@ -483,6 +483,8 @@ struct ControlLease {
 	_escape: Option<windows::EscapeMonitor>,
 	#[cfg(target_os = "linux")]
 	_escape: Option<linux::EscapeMonitor>,
+	#[cfg(target_os = "android")]
+	_escape: Option<()>,
 	_kernel: KernelOwner,
 	running: AtomicBool,
 }
