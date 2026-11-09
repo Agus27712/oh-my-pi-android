@@ -6,6 +6,10 @@ on:
   schedule:
     - cron: "0 3 */2 * *"
   workflow_dispatch:
+  # Run immediately when this workflow is repaired or deliberately updated.
+  push:
+    paths:
+      - ".github/workflows/upstream-sync.yml"
 
 permissions:
   contents: write
@@ -72,6 +76,13 @@ jobs:
           git fetch --no-tags https://github.com/can1357/oh-my-pi.git \
             "refs/tags/$TAG:refs/tags/$TAG"
           git merge --no-edit "$TAG"
+
+          # Keep Android-specific GitHub Actions workflows from the first parent.
+          # Upstream workflow files are not needed for the Termux port, and the
+          # repository token is intentionally not granted workflow-edit access.
+          git restore --source=ORIG_HEAD --staged --worktree .github/workflows/
+          git commit --amend --no-edit
+
           MERGED_VERSION="$(jq -r '.version' packages/natives/package.json)"
           if [[ "$MERGED_VERSION" != "${{ steps.upstream.outputs.upstream_version }}" ]]; then
             echo "::error::Merged source version ($MERGED_VERSION) does not match upstream release ($TAG)"
