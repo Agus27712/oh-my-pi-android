@@ -9,7 +9,6 @@ on:
       - "Cargo.lock"
       - "crates/**"
       - ".github/workflows/android-arm64-check.yml"
-  workflow_dispatch:
 
 permissions:
   contents: read
