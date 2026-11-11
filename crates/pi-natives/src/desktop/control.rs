@@ -477,6 +477,9 @@ type EscapeMonitor = macos::EscapeMonitor;
 type EscapeMonitor = linux::EscapeMonitor;
 #[cfg(windows)]
 type EscapeMonitor = windows::EscapeMonitor;
+/// Android has no desktop-wide physical Escape monitor.
+#[cfg(target_os = "android")]
+type EscapeMonitor = ();
 
 /// The kernel owner lives on its own thread: Windows mutex release must happen
 /// on the same thread that acquired it, even when the session is disposed from
@@ -577,6 +580,12 @@ impl ControlLease {
 	#[cfg(target_os = "linux")]
 	fn escape_monitor(source: &CancellationSource) -> CoreResult<Option<EscapeMonitor>> {
 		linux::EscapeMonitor::start(EmergencyStop(Arc::downgrade(&source.0)))
+	}
+
+	/// Android does not expose a desktop-wide Escape event monitor.
+	#[cfg(target_os = "android")]
+	fn escape_monitor(_source: &CancellationSource) -> CoreResult<Option<EscapeMonitor>> {
+		Ok(None)
 	}
 }
 
