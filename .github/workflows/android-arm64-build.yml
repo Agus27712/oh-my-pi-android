@@ -1,27 +1,24 @@
 name: Android ARM64 native build
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - Android ARM64 cross-check
+    types:
+      - completed
     branches:
       - android/termux
-    paths:
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "crates/**"
-      - "packages/natives/package.json"
-      - "scripts/stamp-native-version.ts"
-      - ".github/workflows/android-arm64-build.yml"
-  workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: android-arm64-build-${{ github.ref }}
+  group: android-arm64-build-${{ github.event.workflow_run.id }}
   cancel-in-progress: true
 
 jobs:
   build-addon:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
@@ -30,8 +27,10 @@ jobs:
       CARGO_BUILD_JOBS: 2
       RUSTC_BOOTSTRAP: 1
     steps:
-      - name: Checkout
+      - name: Checkout cross-checked commit
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Install Rust nightly toolchain
         uses: dtolnay/rust-toolchain@nightly
