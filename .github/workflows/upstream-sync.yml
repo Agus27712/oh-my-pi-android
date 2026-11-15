@@ -1,0 +1,99 @@
+name: Sync OMP upstream
+
+on:
+  # GitHub scheduled workflows run from the default branch (main).
+  # Every two calendar days at 03:00 UTC (10:00 WIB).
+  schedule:
+    - cron: "0 3 */2 * *"
+  workflow_dispatch:
+  # Run immediately when this workflow is repaired or deliberately updated.
+  push:
+    paths:
+      - ".github/workflows/upstream-sync.yml"
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: omp-upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout Android branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Check latest upstream release
+        id: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_JSON="$(curl -fsSL --retry 3 \
+            https://api.github.com/repos/can1357/oh-my-pi/releases/latest)"
+          TAG="$(printf '%s' "$RELEASE_JSON" | jq -r '.tag_name // empty')"
+          if [[ -z "$TAG" ]]; then
+            echo "::error::Could not read latest upstream release tag"
+            exit 1
+          fi
+
+          UPSTREAM_VERSION="${TAG#v}"
+          CURRENT_VERSION="$(jq -r '.version' packages/natives/package.json)"
+          echo "Latest upstream: $TAG"
+          echo "Current main: $CURRENT_VERSION"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "upstream_version=$UPSTREAM_VERSION" >> "$GITHUB_OUTPUT"
+          echo "current_version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+
+          if [[ "$UPSTREAM_VERSION" == "$CURRENT_VERSION" ]]; then
+            echo "update_available=false" >> "$GITHUB_OUTPUT"
+            echo "Already on upstream version $UPSTREAM_VERSION"
+          elif [[ "$(printf '%s\n' "$CURRENT_VERSION" "$UPSTREAM_VERSION" | sort -V | tail -n1)" != "$UPSTREAM_VERSION" ]]; then
+            echo "update_available=false" >> "$GITHUB_OUTPUT"
+            echo "Current branch is newer than or equal to the latest upstream release; refusing downgrade."
+          else
+            echo "update_available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge upstream release into Android branch
+        if: steps.upstream.outputs.update_available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.upstream.outputs.tag }}"
+          git fetch --no-tags https://github.com/can1357/oh-my-pi.git \
+            "refs/tags/$TAG:refs/tags/$TAG"
+          git merge --no-edit "$TAG"
+
+          # Keep Android-specific GitHub Actions workflows from the first parent.
+          # Upstream workflow files are not needed for the Termux port, and the
+          # repository token is intentionally not granted workflow-edit access.
+          git restore --source=ORIG_HEAD --staged --worktree .github/workflows/
+          git commit --amend --no-edit
+
+          MERGED_VERSION="$(jq -r '.version' packages/natives/package.json)"
+          if [[ "$MERGED_VERSION" != "${{ steps.upstream.outputs.upstream_version }}" ]]; then
+            echo "::error::Merged source version ($MERGED_VERSION) does not match upstream release ($TAG)"
+            exit 1
+          fi
+          git push origin HEAD:main
+
+      - name: Dispatch Android ARM64 cross-check
+        if: steps.upstream.outputs.update_available == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run android-arm64-check.yml --ref main
+          echo "Android ARM64 cross-check dispatched for OMP ${{ steps.upstream.outputs.upstream_version }}"

@@ -1,9 +1,10 @@
 name: Android ARM64 cross-check
 
 on:
+  workflow_dispatch:
   push:
     branches:
-      - android/termux
+      - main
     paths:
       - "Cargo.toml"
       - "Cargo.lock"
