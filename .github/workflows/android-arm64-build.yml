@@ -1,6 +1,12 @@
 name: Android ARM64 native build
 
 on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Commit SHA that passed Android ARM64 cross-check
+        required: false
+        type: string
   workflow_run:
     workflows:
       - Android ARM64 cross-check
@@ -13,12 +19,12 @@ permissions:
   contents: write
 
 concurrency:
-  group: android-arm64-build-${{ github.event.workflow_run.id }}
+  group: android-arm64-build-${{ github.event.workflow_run.id || github.run_id }}
   cancel-in-progress: true
 
 jobs:
   build-addon:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
@@ -30,7 +36,7 @@ jobs:
       - name: Checkout cross-checked commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.inputs.source_sha || github.event.workflow_run.head_sha || github.sha }}
 
       - name: Install Rust nightly toolchain
         uses: dtolnay/rust-toolchain@nightly

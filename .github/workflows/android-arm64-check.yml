@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: android-arm64-check-${{ github.ref }}
@@ -70,6 +71,13 @@ jobs:
         run: |
           set -o pipefail
           cargo check -p pi-natives --target aarch64-linux-android --message-format=short 2>&1 | tee android-cargo-check.log
+
+      - name: Dispatch Android ARM64 native build
+        if: ${{ success() && github.event_name == 'workflow_dispatch' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run android-arm64-build.yml --ref main -f source_sha="${GITHUB_SHA}"
 
       - name: Upload diagnostic log
         if: always()
