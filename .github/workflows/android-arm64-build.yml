@@ -87,7 +87,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo build --release -p pi-natives --target aarch64-linux-android
+          cargo build --release -p omp-natives --target aarch64-linux-android
           ADDON="target/aarch64-linux-android/release/libpi_natives.so"
           test -s "$ADDON"
           bun scripts/stamp-native-version.ts "$ADDON"
