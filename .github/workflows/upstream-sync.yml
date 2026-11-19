@@ -39,10 +39,11 @@ jobs:
       - name: Check latest upstream release
         id: upstream
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          RELEASE_JSON="$(curl -fsSL --retry 3 \
-            https://api.github.com/repos/can1357/oh-my-pi/releases/latest)"
+          RELEASE_JSON="$(gh api repos/can1357/oh-my-pi/releases/latest)"
           TAG="$(printf '%s' "$RELEASE_JSON" | jq -r '.tag_name // empty')"
           if [[ -z "$TAG" ]]; then
             echo "::error::Could not read latest upstream release tag"
