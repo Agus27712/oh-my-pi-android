@@ -259,7 +259,7 @@ impl State {
 				});
 			if gone {
 				// SAFETY: plain syscall on a live descriptor.
-				unsafe { libc::inotify_rm_watch(inotify, wd) };
+				unsafe { libc::inotify_rm_watch(inotify, wd as _) };
 			}
 			!gone
 		});
@@ -369,7 +369,7 @@ impl State {
 			let path = watch.path.clone();
 			self.forget_below(&path, false);
 			// SAFETY: plain syscall on a live descriptor.
-			unsafe { libc::inotify_rm_watch(self.inotify.as_raw_fd(), wd) };
+			unsafe { libc::inotify_rm_watch(self.inotify.as_raw_fd(), wd as _) };
 		}
 		Ok(())
 	}
