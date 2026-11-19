@@ -76,7 +76,30 @@ jobs:
           TAG="${{ steps.upstream.outputs.tag }}"
           git fetch --no-tags https://github.com/can1357/oh-my-pi.git \
             "refs/tags/$TAG:refs/tags/$TAG"
-          git merge --no-edit "$TAG"
+          if ! git merge --no-edit "$TAG"; then
+            while IFS= read -r path; do
+              case "$path" in
+                .github/workflows/*)
+                  if git cat-file -e "HEAD:$path" 2>/dev/null; then
+                    git checkout --ours -- "$path"
+                    git add -- "$path"
+                  else
+                    git rm -f --ignore-unmatch -- "$path"
+                  fi
+                  ;;
+                *)
+                  echo "::error::Unresolved upstream merge conflict: $path"
+                  exit 1
+                  ;;
+              esac
+            done < <(git diff --name-only --diff-filter=U)
+
+            if [[ -n "$(git diff --name-only --diff-filter=U)" ]]; then
+              echo "::error::Unresolved upstream merge conflicts remain"
+              exit 1
+            fi
+            git commit --no-edit
+          fi
 
           # Keep Android-specific GitHub Actions workflows from the first parent.
           # Upstream workflow files are not needed for the Termux port, and the
